@@ -18,11 +18,12 @@ type logEntry struct {
 }
 
 type log struct {
-	Name         string
-	ID           [32]byte
-	CurrentIndex int64
+	Name        string
+	ID          [32]byte
+	LocalIndex  int64
+	RemoteIndex int64
 
-	ct ctClient.LogClient
+	client ctClient.LogClient
 }
 
 type progress struct {

@@ -9,6 +9,7 @@ import (
 
 type pollinator struct {
 	cursorCheckInterval time.Duration
+	logWorkers          int
 	logs                map[[32]byte]log
 	entries             chan logEntry
 
@@ -30,9 +31,52 @@ type pollinator struct {
 //  |
 //  v
 // submitEntries() p.submissionRequests ->
+func (p *pollinator) run() {
+
+}
 
 func (p *pollinator) getEntries() {
-
+	wg := new(sync.WaitGroup)
+	for _, l := range p.logs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			err := l.updateRemoteIndex()
+			if err != nil {
+				// log
+				return
+			}
+			if l.RemoteIndex == l.LocalIndex {
+				// stat?
+				return
+			}
+			ranges := make(chan [2]int)
+			for _, r := range entryRanges(l.CurrentIndex, l.RemoteIndex) {
+				ranges <- r
+			}
+			close(ranges)
+			wg := new(sync.WaitGroup)
+			for i := 0; i < l.logWorkers; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					for r := range ranges {
+						entries, err := l.client.GetEntries(r[0], r[1])
+						if err != nil {
+							// ughhhh retry probably.. hate this stuff :/
+							continue
+						}
+						for _, e := range entries {
+							// actually extract stuff
+							p.entries <- logEntry{}
+						}
+					}
+				}()
+			}
+			wg.Wait()
+		}()
+	}
+	wg.Wait()
 }
 
 func (p *pollinator) processEntries() {
