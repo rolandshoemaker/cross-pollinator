@@ -1,29 +1,117 @@
 package cross
 
 import (
-	ct "github.com/letsencrypt/certificate-transparency/go"
-	ctClient "github.com/letsencrypt/certificate-transparency/go/client"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"net/http"
+
+	ct "github.com/google/certificate-transparency/go"
+	ctClient "github.com/google/certificate-transparency/go/client"
 )
 
-type validRoot struct {
-	DN    string
-	LogID [32]byte
+type entryContent struct {
+	Hash    []byte
+	Content []byte
 }
 
-type logEntry struct {
-	Hash     [32]byte
-	RootDN   string
-	EntryNum int64
-	LogID    [32]byte
+type LogEntry struct {
+	ID                   int64
+	SubmissionHash       []byte
+	RootDN               string
+	EntryNum             int64
+	LogID                []byte
+	UnparseableComponent bool
+	EntryType            ct.LogEntryType
+
+	Submission []byte `db:"-"`
 }
 
-type log struct {
+type Log struct {
 	Name        string
-	ID          [32]byte
+	ID          []byte
 	LocalIndex  int64
 	RemoteIndex int64
 
-	client ctClient.LogClient
+	URI    string
+	Client *ctClient.LogClient
+
+	ValidRoots map[string]struct{}
+}
+
+func (l *Log) PopulateRoots() {
+	resp, err := http.Get(fmt.Sprintf("%s/ct/v1/get-roots", l.URI))
+	if err != nil {
+		// fmt.Fprintf(os.Stderr, "failed to get CT log roots: %s\n", err)
+		fmt.Println(err)
+		return
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		// fmt.Fprintf(os.Stderr, "failed to read CT log roots response: %s\n", err)
+		fmt.Println(err)
+		return
+	}
+	var encodedRoots struct {
+		Certificates []string `json:"certificates"`
+	}
+	err = json.Unmarshal(body, &encodedRoots)
+	if err != nil {
+		// fmt.Fprintf(os.Stderr, "failed to parse CT log roots response: %s\n", err)
+		fmt.Println(err)
+		return
+	}
+	for _, encodedRoot := range encodedRoots.Certificates {
+		rawCert, err := base64.StdEncoding.DecodeString(encodedRoot)
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+		root, err := x509.ParseCertificate(rawCert)
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+		subject := subjectToString(root.Subject)
+		if subject == "" {
+			fmt.Println("weird")
+			continue
+		}
+		fmt.Println(subject)
+		l.ValidRoots[subject] = struct{}{}
+	}
+}
+
+func (l *Log) FindRoot(chain []ct.ASN1Cert) (string, error) {
+	for _, asnCert := range chain {
+		cert, err := x509.ParseCertificate(asnCert)
+		if err != nil {
+			// badd
+			fmt.Println(err)
+			continue
+		}
+		issuer := subjectToString(cert.Issuer)
+		if _, present := l.ValidRoots[issuer]; present {
+			return issuer, nil
+		}
+		subject := subjectToString(cert.Subject)
+		if _, present := l.ValidRoots[subject]; present {
+			return subject, nil
+		}
+	}
+	return "", fmt.Errorf("No suitable root found")
+}
+
+func (l *Log) UpdateRemoteIndex() error {
+	sth, err := l.Client.GetSTH()
+	if err != nil {
+		return err
+	}
+	l.RemoteIndex = int64(sth.TreeSize)
+	return nil
 }
 
 type progress struct {
@@ -32,8 +120,8 @@ type progress struct {
 	CurrentIndex   int64
 }
 
-type submissionRequest struct {
+type SubmissionRequest struct {
 	entryNum int64
-	srcLog   *log
-	dstLog   *log
+	srcLog   *Log
+	dstLog   *Log
 }

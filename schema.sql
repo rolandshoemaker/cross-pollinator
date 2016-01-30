@@ -1,32 +1,18 @@
-CREATE TABLE `validRoots` (
-  `id` bigint(20) NOT NULL AUTO_INCREMENT,
-  `dn` varchar(255) NOT NULL,
-  `logID` binary(32) NOT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `dn_logID` (`dn`, `logID`)
+CREATE TABLE `submissionContents` (
+  `hash` binary(32) NOT NULL,
+  `content` mediumblob NOT NULL,
+  PRIMARY KEY (`hash`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 CREATE TABLE `logEntries` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
-  `hash` binary(32) NOT NULL,
+  `submissionHash` binary(32) NOT NULL,
   `rootDN` varchar(255) NOT NULL,
   `entryNum` bigint(20) NOT NULL,
   `logID` binary(32) NOT NULL,
+  `entryType` tinyint(8) NOT NULL,
+  `unparseableComponent` tinyint(1) NOT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `entryNum_logID` (`entryNum`, `logID`)
-  UNIQUE KEY `hash_logID` (`hash`, `logID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;
-
-CREATE TABLE `log` (
-  `id` binary(32) NOT NULL,
-  `name` varchar(255) NOT NULL,
-  `currentIndex` bigint(20) NOT NULL,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;
-
-CREATE TABLE `progress` (
-  `srcLog` binary(32) NOT NULL,
-  `dstLog` binary(32) NOT NULL,
-  `currentIndex` bigint(20) NOT NULL,
-  UNIQUE KEY `src_dst` (`srcLog`, `dstLog`)
+  UNIQUE KEY `entryNum_logID` (`entryNum`, `logID`),
+  UNIQUE KEY `submissionHash_logID` (`submissionHash`, `logID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
