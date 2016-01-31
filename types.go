@@ -1,6 +1,8 @@
 package cross
 
 import (
+	"crypto"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -30,62 +32,104 @@ type LogEntry struct {
 }
 
 type Log struct {
-	Name        string
-	ID          []byte
-	LocalIndex  int64
-	RemoteIndex int64
+	name        string
+	id          []byte
+	localIndex  int64
+	remoteIndex int64
 
-	URI    string
-	Client *ctClient.LogClient
+	uri    string
+	client *ctClient.LogClient
 
-	ValidRoots map[string]struct{}
+	db *Database
+
+	validRoots map[string]struct{}
 }
 
-func (l *Log) PopulateRoots() {
-	resp, err := http.Get(fmt.Sprintf("%s/ct/v1/get-roots", l.URI))
+func NewLog(db *Database, name, uri string, pk crypto.PublicKey) (*Log, error) {
+	var id []byte
+	log := &Log{
+		name:       name,
+		id:         id,
+		uri:        uri,
+		client:     ctClient.New(uri),
+		db:         db,
+		validRoots: make(map[string]struct{}),
+	}
+	err := log.populateRoots()
 	if err != nil {
-		// fmt.Fprintf(os.Stderr, "failed to get CT log roots: %s\n", err)
-		fmt.Println(err)
-		return
+		return nil, err
+	}
+	err = log.updateLocalIndex()
+	if err != nil {
+		return nil, err
+	}
+	err = log.UpdateRemoteIndex()
+	if err != nil {
+		return nil, err
+	}
+	return log, nil
+}
+
+func (l *Log) updateLocalIndex() error {
+	index, err := l.db.getCurrentLogIndex(l.id)
+	if err != nil {
+		return err
+	}
+	l.localIndex = index
+	return nil
+}
+
+func (l *Log) UpdateRemoteIndex() error {
+	sth, err := l.client.GetSTH()
+	if err != nil {
+		return err
+	}
+	l.remoteIndex = int64(sth.TreeSize)
+	return nil
+}
+
+func (l *Log) populateRoots() error {
+	resp, err := http.Get(fmt.Sprintf("%s/ct/v1/get-roots", l.uri))
+	if err != nil {
+		return err
 	}
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		// fmt.Fprintf(os.Stderr, "failed to read CT log roots response: %s\n", err)
-		fmt.Println(err)
-		return
+		return err
 	}
 	var encodedRoots struct {
 		Certificates []string `json:"certificates"`
 	}
 	err = json.Unmarshal(body, &encodedRoots)
 	if err != nil {
-		// fmt.Fprintf(os.Stderr, "failed to parse CT log roots response: %s\n", err)
-		fmt.Println(err)
-		return
+		return err
 	}
 	for _, encodedRoot := range encodedRoots.Certificates {
 		rawCert, err := base64.StdEncoding.DecodeString(encodedRoot)
 		if err != nil {
+			// log
 			fmt.Println(err)
 			continue
 		}
 		root, err := x509.ParseCertificate(rawCert)
 		if err != nil {
+			// log
 			fmt.Println(err)
 			continue
 		}
 		subject := subjectToString(root.Subject)
 		if subject == "" {
+			// log + stat
 			fmt.Println("weird")
 			continue
 		}
-		fmt.Println(subject)
-		l.ValidRoots[subject] = struct{}{}
+		l.validRoots[subject] = struct{}{}
 	}
+	return nil
 }
 
-func (l *Log) FindRoot(chain []ct.ASN1Cert) (string, error) {
+func (l *Log) findRoot(chain []ct.ASN1Cert) (string, error) {
 	for _, asnCert := range chain {
 		cert, err := x509.ParseCertificate(asnCert)
 		if err != nil {
@@ -94,30 +138,91 @@ func (l *Log) FindRoot(chain []ct.ASN1Cert) (string, error) {
 			continue
 		}
 		issuer := subjectToString(cert.Issuer)
-		if _, present := l.ValidRoots[issuer]; present {
+		if _, present := l.validRoots[issuer]; present {
 			return issuer, nil
 		}
 		subject := subjectToString(cert.Subject)
-		if _, present := l.ValidRoots[subject]; present {
+		if _, present := l.validRoots[subject]; present {
 			return subject, nil
 		}
 	}
 	return "", fmt.Errorf("No suitable root found")
 }
 
-func (l *Log) UpdateRemoteIndex() error {
-	sth, err := l.Client.GetSTH()
+func (l *Log) processEntry(e ct.LogEntry) *LogEntry {
+	chain := []ct.ASN1Cert{}
+	fullEntry := []byte{}
+	entryType := e.Leaf.TimestampedEntry.EntryType
+	switch entryType {
+	case ct.X509LogEntryType:
+		fullEntry = append(fullEntry, []byte(e.Leaf.TimestampedEntry.X509Entry)...)
+	case ct.PrecertLogEntryType:
+		fullEntry = append(fullEntry, []byte(e.Leaf.TimestampedEntry.PrecertEntry.TBSCertificate)...)
+	}
+	for _, asnCert := range e.Chain {
+		fullEntry = append(fullEntry, []byte(asnCert)...)
+	}
+	if len(e.Chain) == 0 {
+		switch entryType {
+		case ct.X509LogEntryType:
+			chain = append(chain, e.Leaf.TimestampedEntry.X509Entry)
+		case ct.PrecertLogEntryType:
+			chain = append(chain, e.Leaf.TimestampedEntry.PrecertEntry.TBSCertificate)
+		}
+	} else {
+		chain = e.Chain
+	}
+	unparseable := false
+	rootDN, err := l.findRoot(chain)
+	if err != nil {
+		// log
+		fmt.Println(err)
+		unparseable = true
+	}
+	contentHash := sha256.Sum256(fullEntry)
+	return &LogEntry{
+		SubmissionHash:       contentHash[:],
+		RootDN:               rootDN,
+		EntryNum:             e.Index,
+		LogID:                l.id,
+		Submission:           fullEntry,
+		EntryType:            entryType,
+		UnparseableComponent: unparseable,
+	}
+}
+
+func (l *Log) GetEntries(processed chan *LogEntry) error {
+	err := l.UpdateRemoteIndex()
 	if err != nil {
 		return err
 	}
-	l.RemoteIndex = int64(sth.TreeSize)
-	return nil
-}
+	fmt.Println(l.localIndex, l.remoteIndex)
+	if l.remoteIndex == l.localIndex {
+		// stat?
+		return nil
+	}
 
-type progress struct {
-	SourceLog      [32]byte `db:"srcLog"`
-	DestinationLog [32]byte `db:"dstLog"`
-	CurrentIndex   int64
+	addedUpTo := l.localIndex
+	for addedUpTo < l.remoteIndex {
+		max := addedUpTo + 1000
+		if max > l.remoteIndex {
+			max = l.remoteIndex
+		}
+		entries, err := l.client.GetEntries(addedUpTo, max)
+		if err != nil {
+			// log && backoff?
+			fmt.Println(err)
+			continue
+		}
+		for _, e := range entries {
+			if addedUpTo != 0 && e.Index == 0 {
+				break // ct client bug
+			}
+			processed <- l.processEntry(e)
+			addedUpTo++
+		}
+	}
+	return nil
 }
 
 type SubmissionRequest struct {
