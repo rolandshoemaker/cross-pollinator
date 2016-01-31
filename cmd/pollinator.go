@@ -1,8 +1,9 @@
 package main
 
 import (
-	"crypto"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"sync"
 	"time"
 
@@ -14,7 +15,7 @@ import (
 type pollinator struct {
 	logUpdateInterval time.Duration
 	logWorkers        int
-	logs              map[[32]byte]*cross.Log
+	logs              []*cross.Log
 	entries           chan *cross.LogEntry
 
 	db *cross.Database
@@ -27,24 +28,61 @@ type pollinator struct {
 }
 
 func (p *pollinator) getUpdates() {
+	totalEntries := int64(0)
+	for _, l := range p.logs {
+		err := l.UpdateRemoteIndex()
+		if err != nil {
+			// log
+			fmt.Println(err)
+		}
+		totalEntries += l.MissingEntries()
+	}
+
+	p.entries = make(chan *cross.LogEntry, totalEntries)
 	wg := new(sync.WaitGroup)
 	for _, l := range p.logs {
 		wg.Add(1)
-		go func() {
+		go func(log *cross.Log) {
 			defer wg.Done()
-			err := l.GetEntries(p.entries)
+			err := log.GetNewEntries(p.entries)
 			if err != nil {
 				// log
 				fmt.Println(err)
 				return
 			}
-		}()
+		}(l)
 	}
+
+	finishedProcessing := make(chan struct{})
+	go func() {
+		defer func() { finishedProcessing <- struct{}{} }()
+		p.processEntries()
+	}()
 	wg.Wait()
+	close(p.entries)
+	<-finishedProcessing
+
+	for _, l := range p.logs {
+		err := l.UpdateLocalIndex()
+		if err != nil {
+			// log
+			fmt.Println(err)
+			continue
+		}
+	}
 }
 
 func (p *pollinator) processEntries() {
-
+	for e := range p.entries {
+		s := time.Now()
+		err := p.db.AddEntry(e)
+		p.stats.TimingDuration("entries.entry-insert-latency", time.Since(s), 1.0)
+		if err != nil {
+			// log
+			fmt.Println(err)
+		}
+		p.stats.Inc("entries.entries-inserted", 1, 1.0)
+	}
 }
 
 func (p *pollinator) findViableEntries() {
@@ -69,35 +107,46 @@ func (p *pollinator) run() {
 }
 
 func main() {
-	id := [32]byte{255}
-	db := cross.NewDatabase()
-	var pk crypto.PublicKey
-	logURI := "https://ct.googleapis.com/pilot"
-	log, err := cross.NewLog(db, "log", logURI, pk)
+	configFilename := "config.json"
+
+	var config cross.Config
+	contents, err := ioutil.ReadFile(configFilename)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	err = json.Unmarshal(contents, &config)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 
+	db := cross.NewDatabase(config.DatabaseURI)
+	stats, err := statsd.NewClient(config.StatsdURI, "pollinator")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	logs := make([]*cross.Log, len(config.Logs))
+	for i, kl := range config.Logs {
+		log, err := cross.NewLog(db, stats, kl)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		logs[i] = log
+	}
+
+	fmt.Println(logs)
 	p := pollinator{
-		db:      db,
-		entries: make(chan *cross.LogEntry, 1000000),
-		logs: map[[32]byte]*cross.Log{
-			id: log,
-		},
+		db:    db,
+		stats: stats,
+		logs:  logs,
 	}
 
 	go p.getUpdates()
-	go func() {
-		for {
-			fmt.Println(len(p.entries))
-			time.Sleep(time.Millisecond * 250)
-		}
-	}()
-	for e := range p.entries {
-		err := p.db.AddEntry(e)
-		if err != nil {
-			fmt.Println(err)
-		}
+	for {
+		fmt.Println(len(p.entries))
+		time.Sleep(time.Millisecond * 250)
 	}
 }

@@ -1,7 +1,6 @@
 package cross
 
 import (
-	"crypto"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
@@ -9,7 +8,10 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strings"
+	"time"
 
+	"github.com/cactus/go-statsd-client/statsd"
 	ct "github.com/google/certificate-transparency/go"
 	ctClient "github.com/google/certificate-transparency/go/client"
 )
@@ -32,46 +34,52 @@ type LogEntry struct {
 }
 
 type Log struct {
-	name        string
-	id          []byte
+	Name        string
+	ID          []byte
 	localIndex  int64
 	remoteIndex int64
 
 	uri    string
 	client *ctClient.LogClient
 
-	db *Database
+	db    *Database
+	stats statsd.Statter
 
 	validRoots map[string]struct{}
 }
 
-func NewLog(db *Database, name, uri string, pk crypto.PublicKey) (*Log, error) {
-	var id []byte
+func NewLog(db *Database, stats statsd.Statter, kl KnownLog) (*Log, error) {
+	name, uri := kl.Description, kl.URL
+	if !strings.HasPrefix(uri, "http") {
+		uri = "https://" + uri
+	}
+	pkBytes, err := base64.StdEncoding.DecodeString(kl.Key)
+	if err != nil {
+		return nil, err
+	}
+	id := sha256.Sum256(pkBytes)
 	log := &Log{
-		name:       name,
-		id:         id,
+		Name:       name,
+		ID:         id[:],
 		uri:        uri,
 		client:     ctClient.New(uri),
 		db:         db,
+		stats:      stats,
 		validRoots: make(map[string]struct{}),
 	}
-	err := log.populateRoots()
+	err = log.populateRoots()
 	if err != nil {
 		return nil, err
 	}
-	err = log.updateLocalIndex()
-	if err != nil {
-		return nil, err
-	}
-	err = log.UpdateRemoteIndex()
+	err = log.UpdateLocalIndex()
 	if err != nil {
 		return nil, err
 	}
 	return log, nil
 }
 
-func (l *Log) updateLocalIndex() error {
-	index, err := l.db.getCurrentLogIndex(l.id)
+func (l *Log) UpdateLocalIndex() error {
+	index, err := l.db.getCurrentLogIndex(l.ID)
 	if err != nil {
 		return err
 	}
@@ -85,7 +93,12 @@ func (l *Log) UpdateRemoteIndex() error {
 		return err
 	}
 	l.remoteIndex = int64(sth.TreeSize)
+	fmt.Println(l.Name, l.localIndex, l.remoteIndex)
 	return nil
+}
+
+func (l *Log) MissingEntries() int64 {
+	return l.remoteIndex - l.localIndex
 }
 
 func (l *Log) populateRoots() error {
@@ -184,31 +197,28 @@ func (l *Log) processEntry(e ct.LogEntry) *LogEntry {
 		SubmissionHash:       contentHash[:],
 		RootDN:               rootDN,
 		EntryNum:             e.Index,
-		LogID:                l.id,
+		LogID:                l.ID,
 		Submission:           fullEntry,
 		EntryType:            entryType,
 		UnparseableComponent: unparseable,
 	}
 }
 
-func (l *Log) GetEntries(processed chan *LogEntry) error {
-	err := l.UpdateRemoteIndex()
-	if err != nil {
-		return err
-	}
-	fmt.Println(l.localIndex, l.remoteIndex)
-	if l.remoteIndex == l.localIndex {
+func (l *Log) GetNewEntries(processed chan *LogEntry) error {
+	if l.remoteIndex <= l.localIndex {
 		// stat?
 		return nil
 	}
 
-	addedUpTo := l.localIndex
+	addedUpTo := l.localIndex + 1
 	for addedUpTo < l.remoteIndex {
 		max := addedUpTo + 1000
 		if max > l.remoteIndex {
 			max = l.remoteIndex
 		}
+		s := time.Now()
 		entries, err := l.client.GetEntries(addedUpTo, max)
+		l.stats.TimingDuration(fmt.Sprintf("entries.download-latency.%s", l.Name), time.Since(s), 1.0)
 		if err != nil {
 			// log && backoff?
 			fmt.Println(err)
@@ -218,8 +228,10 @@ func (l *Log) GetEntries(processed chan *LogEntry) error {
 			if addedUpTo != 0 && e.Index == 0 {
 				break // ct client bug
 			}
+			l.stats.Inc(fmt.Sprintf("entries.downloaded.%s", l.Name), 1, 1.0)
 			processed <- l.processEntry(e)
 			addedUpTo++
+			l.stats.Inc(fmt.Sprintf("entries.processed.%s", l.Name), 1, 1.0)
 		}
 	}
 	return nil

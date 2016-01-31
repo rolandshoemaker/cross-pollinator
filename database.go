@@ -14,8 +14,8 @@ type Database struct {
 	*gorp.DbMap
 }
 
-func NewDatabase() *Database {
-	db, err := sql.Open("mysql", "pollinator@/pollinator")
+func NewDatabase(uri string) *Database {
+	db, err := sql.Open("mysql", uri)
 	if err != nil {
 		panic(err)
 	}
@@ -70,8 +70,15 @@ func (db *Database) AddEntry(e *LogEntry) error {
 }
 
 func (db *Database) getCurrentLogIndex(logID []byte) (int64, error) {
-	return db.SelectInt(
+	index, err := db.SelectNullInt(
 		"SELECT MAX(entryNum) FROM logEntries WHERE logID = ?",
 		logID,
 	)
+	if err != nil {
+		return 0, err
+	}
+	if index.Valid {
+		return index.Int64, nil
+	}
+	return 0, nil
 }
