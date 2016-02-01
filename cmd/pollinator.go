@@ -18,7 +18,8 @@ type pollinator struct {
 	logs              []*cross.Log
 	entries           chan *cross.LogEntry
 
-	db *cross.Database
+	db        *cross.Database
+	dbWorkers int
 
 	submissionRequests chan cross.SubmissionRequest
 	wrMu               *sync.RWMutex
@@ -73,16 +74,24 @@ func (p *pollinator) getUpdates() {
 }
 
 func (p *pollinator) processEntries() {
-	for e := range p.entries {
-		s := time.Now()
-		err := p.db.AddEntry(e)
-		p.stats.TimingDuration("entries.entry-insert-latency", time.Since(s), 1.0)
-		if err != nil {
-			// log
-			fmt.Println(err)
-		}
-		p.stats.Inc("entries.entries-inserted", 1, 1.0)
+	wg := new(sync.WaitGroup)
+	for i := 0; i < p.dbWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for e := range p.entries {
+				s := time.Now()
+				err := p.db.AddEntry(e)
+				p.stats.TimingDuration("entries.entry-insert-latency", time.Since(s), 1.0)
+				if err != nil {
+					// log
+					fmt.Println(err)
+				}
+				p.stats.Inc("entries.entries-inserted", 1, 1.0)
+			}
+		}()
 	}
+	wg.Wait()
 }
 
 func (p *pollinator) findViableEntries() {
@@ -139,9 +148,10 @@ func main() {
 
 	fmt.Println(logs)
 	p := pollinator{
-		db:    db,
-		stats: stats,
-		logs:  logs,
+		db:        db,
+		dbWorkers: 15,
+		stats:     stats,
+		logs:      logs,
 	}
 
 	go p.getUpdates()

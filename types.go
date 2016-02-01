@@ -92,8 +92,9 @@ func (l *Log) UpdateRemoteIndex() error {
 	if err != nil {
 		return err
 	}
-	l.remoteIndex = int64(sth.TreeSize)
+	l.remoteIndex = int64(sth.TreeSize - 1)
 	fmt.Println(l.Name, l.localIndex, l.remoteIndex)
+	l.stats.Gauge(fmt.Sprintf("entries.remaining.%s", l.Name), l.remoteIndex-l.localIndex, 1.0)
 	return nil
 }
 
@@ -210,9 +211,9 @@ func (l *Log) GetNewEntries(processed chan *LogEntry) error {
 		return nil
 	}
 
-	addedUpTo := l.localIndex + 1
+	addedUpTo := l.localIndex
 	for addedUpTo < l.remoteIndex {
-		max := addedUpTo + 1000
+		max := addedUpTo + 2000
 		if max > l.remoteIndex {
 			max = l.remoteIndex
 		}
@@ -221,17 +222,16 @@ func (l *Log) GetNewEntries(processed chan *LogEntry) error {
 		l.stats.TimingDuration(fmt.Sprintf("entries.download-latency.%s", l.Name), time.Since(s), 1.0)
 		if err != nil {
 			// log && backoff?
-			fmt.Println(err)
+			fmt.Println(l.Name, err)
 			continue
 		}
+		fmt.Println(l.Name, len(entries))
+		l.stats.Inc(fmt.Sprintf("entries.downloaded.%s", l.Name), int64(len(entries)), 1.0)
 		for _, e := range entries {
-			if addedUpTo != 0 && e.Index == 0 {
-				break // ct client bug
-			}
-			l.stats.Inc(fmt.Sprintf("entries.downloaded.%s", l.Name), 1, 1.0)
 			processed <- l.processEntry(e)
 			addedUpTo++
 			l.stats.Inc(fmt.Sprintf("entries.processed.%s", l.Name), 1, 1.0)
+			l.stats.Gauge(fmt.Sprintf("entries.remaining.%s", l.Name), l.remoteIndex-addedUpTo, 1.0)
 		}
 	}
 	return nil
