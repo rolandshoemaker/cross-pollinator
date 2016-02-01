@@ -1,7 +1,9 @@
 CREATE TABLE `submissionContents` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `hash` binary(32) NOT NULL,
   `content` mediumblob NOT NULL,
-  PRIMARY KEY (`hash`)
+  PRIMARY KEY (`id`),
+  KEY ('hash')
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 CREATE TABLE `logEntries` (

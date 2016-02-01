@@ -22,17 +22,22 @@ func NewDatabase(uri string) *Database {
 
 	dbMap := &gorp.DbMap{Db: db, Dialect: gorp.MySQLDialect{"InnoDB", "UTF8"}}
 	dbMap.AddTableWithName(LogEntry{}, "logEntries").SetKeys(true, "ID")
-	dbMap.AddTableWithName(entryContent{}, "submissionContents").SetKeys(false, "Hash")
+	dbMap.AddTableWithName(entryContent{}, "submissionContents").SetKeys(true, "ID")
 	// dbMap.TraceOn("SQL: ", log.New(os.Stdout, "", 5))
 	return &Database{dbMap}
 }
 
 func (db *Database) getContent(hash []byte) (*entryContent, error) {
-	obj, err := db.Get(entryContent{}, hash)
+	var entry entryContent
+	err := db.SelectOne(
+		&entry,
+		"SELECT * FROM submissionConents WHERE hash = ?",
+		hash,
+	)
 	if err != nil {
 		return nil, err
 	}
-	return obj.(*entryContent), nil
+	return &entry, nil
 }
 
 func (db *Database) GetEntry(hash []byte) (*LogEntry, error) {

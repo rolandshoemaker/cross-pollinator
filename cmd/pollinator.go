@@ -29,17 +29,17 @@ type pollinator struct {
 }
 
 func (p *pollinator) getUpdates() {
-	totalEntries := int64(0)
+	// totalEntries := int64(0)
 	for _, l := range p.logs {
 		err := l.UpdateRemoteIndex()
 		if err != nil {
 			// log
 			fmt.Println(err)
 		}
-		totalEntries += l.MissingEntries()
+		// totalEntries += l.MissingEntries()
 	}
 
-	p.entries = make(chan *cross.LogEntry, totalEntries)
+	p.entries = make(chan *cross.LogEntry, 1000000) // totalEntries)
 	wg := new(sync.WaitGroup)
 	for _, l := range p.logs {
 		wg.Add(1)
@@ -149,7 +149,7 @@ func main() {
 	fmt.Println(logs)
 	p := pollinator{
 		db:        db,
-		dbWorkers: 15,
+		dbWorkers: 75,
 		stats:     stats,
 		logs:      logs,
 	}

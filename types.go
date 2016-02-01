@@ -17,6 +17,7 @@ import (
 )
 
 type entryContent struct {
+	ID      int64
 	Hash    []byte
 	Content []byte
 }
