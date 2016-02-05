@@ -71,7 +71,7 @@ func (db *Database) AddEntry(e *LogEntry) error {
 		IDs = append(IDs, id)
 	}
 	e.ChainIDs = IDs
-	err = db.DbMap.Insert(e)
+	err := db.DbMap.Insert(e)
 	if err != nil && !strings.HasPrefix(err.Error(), "Error 1062: Duplicate entry") {
 		return err
 	}
