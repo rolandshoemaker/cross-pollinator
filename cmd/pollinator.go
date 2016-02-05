@@ -149,7 +149,7 @@ func main() {
 	fmt.Println(logs)
 	p := pollinator{
 		db:        db,
-		dbWorkers: 75,
+		dbWorkers: 250,
 		stats:     stats,
 		logs:      logs,
 	}

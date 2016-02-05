@@ -16,22 +16,22 @@ import (
 	ctClient "github.com/google/certificate-transparency/go/client"
 )
 
-type entryContent struct {
-	ID      int64
-	Hash    []byte
-	Content []byte
+type certificate struct {
+	ID   int64
+	Hash []byte
+	DER  []byte
 }
 
 type LogEntry struct {
 	ID                   int64
-	SubmissionHash       []byte
 	RootDN               string
 	EntryNum             int64
 	LogID                []byte
 	UnparseableComponent bool
 	EntryType            ct.LogEntryType
 
-	Submission []byte `db:"-"`
+	ChainIDs []int64  `db:"chainIDs"`
+	Chain    [][]byte `db:"-"`
 }
 
 type Log struct {
@@ -165,44 +165,42 @@ func (l *Log) findRoot(chain []ct.ASN1Cert) (string, error) {
 }
 
 func (l *Log) processEntry(e ct.LogEntry) *LogEntry {
-	chain := []ct.ASN1Cert{}
-	fullEntry := []byte{}
+	issuerChain := []ct.ASN1Cert{}
+	var fullEntry [][]byte
 	entryType := e.Leaf.TimestampedEntry.EntryType
 	switch entryType {
 	case ct.X509LogEntryType:
-		fullEntry = append(fullEntry, []byte(e.Leaf.TimestampedEntry.X509Entry)...)
+		fullEntry = append(fullEntry, []byte(e.Leaf.TimestampedEntry.X509Entry))
 	case ct.PrecertLogEntryType:
-		fullEntry = append(fullEntry, []byte(e.Leaf.TimestampedEntry.PrecertEntry.TBSCertificate)...)
+		fullEntry = append(fullEntry, []byte(e.Leaf.TimestampedEntry.PrecertEntry.TBSCertificate))
 	}
 	for _, asnCert := range e.Chain {
-		fullEntry = append(fullEntry, []byte(asnCert)...)
+		fullEntry = append(fullEntry, []byte(asnCert))
 	}
 	if len(e.Chain) == 0 {
 		switch entryType {
 		case ct.X509LogEntryType:
-			chain = append(chain, e.Leaf.TimestampedEntry.X509Entry)
+			issuerChain = append(issuerChain, e.Leaf.TimestampedEntry.X509Entry)
 		case ct.PrecertLogEntryType:
-			chain = append(chain, e.Leaf.TimestampedEntry.PrecertEntry.TBSCertificate)
+			issuerChain = append(issuerChain, e.Leaf.TimestampedEntry.PrecertEntry.TBSCertificate)
 		}
 	} else {
-		chain = e.Chain
+		issuerChain = e.Chain
 	}
 	unparseable := false
-	rootDN, err := l.findRoot(chain)
+	rootDN, err := l.findRoot(issuerChain)
 	if err != nil {
 		// log
 		fmt.Println(err)
 		unparseable = true
 	}
-	contentHash := sha256.Sum256(fullEntry)
 	return &LogEntry{
-		SubmissionHash:       contentHash[:],
 		RootDN:               rootDN,
 		EntryNum:             e.Index,
 		LogID:                l.ID,
-		Submission:           fullEntry,
 		EntryType:            entryType,
 		UnparseableComponent: unparseable,
+		Chain:                fullEntry,
 	}
 }
 

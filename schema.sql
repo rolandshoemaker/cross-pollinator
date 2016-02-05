@@ -1,14 +1,13 @@
-CREATE TABLE `submissionContents` (
+CREATE TABLE `certificates` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
-  `hash` binary(32) NOT NULL,
-  `content` mediumblob NOT NULL,
-  PRIMARY KEY (`id`),
-  KEY ('hash')
+  `hash` binary(32) UNIQUE NOT NULL,
+  `der` mediumblob NOT NULL,
+  PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 CREATE TABLE `logEntries` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
-  `submissionHash` binary(32) NOT NULL,
+  `chainIDs` varchar(255) NOT NULL,
   `rootDN` varchar(255) NOT NULL,
   `entryNum` bigint(20) NOT NULL,
   `logID` binary(32) NOT NULL,
@@ -16,5 +15,5 @@ CREATE TABLE `logEntries` (
   `unparseableComponent` tinyint(1) NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `entryNum_logID` (`entryNum`, `logID`),
-  UNIQUE KEY `submissionHash_logID` (`submissionHash`, `logID`)
+  UNIQUE KEY `chainIDs_logID` (`chainIDs`, `logID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
