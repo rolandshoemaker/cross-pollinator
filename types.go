@@ -3,6 +3,7 @@ package cross
 import (
 	"crypto/sha256"
 	"crypto/x509"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -17,21 +18,27 @@ import (
 )
 
 type certificate struct {
-	ID   int64
-	Hash []byte
-	DER  []byte
+	ID     int64
+	Hash   []byte
+	Offset int64
+	Length int64
+}
+
+type certificateChain struct {
+	ID                   int64
+	Hash                 []byte
+	CertIDs              []int64 `db:"-"`
+	RootDN               string
+	EntryType            ct.LogEntryType
+	UnparseableComponent bool
+	Logs                 map[string]struct{}
 }
 
 type LogEntry struct {
-	ID                   int64
-	RootDN               string
-	EntryNum             int64
-	LogID                []byte
-	UnparseableComponent bool
-	EntryType            ct.LogEntryType
-
-	ChainIDs []int64  `db:"chainIDs"`
-	Chain    [][]byte `db:"-"`
+	ID       int64
+	EntryNum int64
+	LogID    []byte
+	ChainID  int64
 }
 
 type Log struct {
@@ -43,8 +50,9 @@ type Log struct {
 	uri    string
 	client *ctClient.LogClient
 
-	db    *Database
-	stats statsd.Statter
+	db       *Database
+	certFile *byteFile
+	stats    statsd.Statter
 
 	validRoots map[string]struct{}
 }
@@ -164,8 +172,14 @@ func (l *Log) findRoot(chain []ct.ASN1Cert) (string, error) {
 	return "", fmt.Errorf("No suitable root found")
 }
 
-func (l *Log) processEntry(e ct.LogEntry) *LogEntry {
-	issuerChain := []ct.ASN1Cert{}
+// func (l *Log) addCertificate(der []byte) (int64, error) {
+// 	certFP := sha256.Sum256(der)
+// 	if certID, err := l.db.GetCertificateID(certFP[:]); err == nil {
+// 		return certID, nil
+// 	}
+// }
+
+func (l *Log) addChain(e *ct.LogEntry) (int64, error) {
 	var fullEntry [][]byte
 	entryType := e.Leaf.TimestampedEntry.EntryType
 	switch entryType {
@@ -177,34 +191,83 @@ func (l *Log) processEntry(e ct.LogEntry) *LogEntry {
 	for _, asnCert := range e.Chain {
 		fullEntry = append(fullEntry, []byte(asnCert))
 	}
+
+	hasher := sha256.New()
+	for _, c := range fullEntry {
+		hasher.Write([]byte(c))
+	}
+	chainFP := hasher.Sum(nil)
+	if chainID, err := l.db.GetChainID(chainFP); err == nil {
+		return chainID, nil
+	} else if err != nil && err != sql.ErrNoRows {
+		return 0, err
+	}
+
+	var issuerChain []ct.ASN1Cert
 	if len(e.Chain) == 0 {
 		switch entryType {
 		case ct.X509LogEntryType:
-			issuerChain = append(issuerChain, e.Leaf.TimestampedEntry.X509Entry)
+			issuerChain = []ct.ASN1Cert{e.Leaf.TimestampedEntry.X509Entry}
 		case ct.PrecertLogEntryType:
-			issuerChain = append(issuerChain, e.Leaf.TimestampedEntry.PrecertEntry.TBSCertificate)
+			issuerChain = []ct.ASN1Cert{e.Leaf.TimestampedEntry.PrecertEntry.TBSCertificate}
 		}
 	} else {
 		issuerChain = e.Chain
 	}
-	unparseable := false
+
+	chain := &certificateChain{
+		Hash:      chainFP,
+		EntryType: entryType,
+		Logs:      map[string]struct{}{fmt.Sprintf("%X", l.ID): struct{}{}},
+	}
+
 	rootDN, err := l.findRoot(issuerChain)
 	if err != nil {
 		// log
 		fmt.Println(err)
-		unparseable = true
+		chain.UnparseableComponent = true
 	}
-	return &LogEntry{
-		RootDN:               rootDN,
-		EntryNum:             e.Index,
-		LogID:                l.ID,
-		EntryType:            entryType,
-		UnparseableComponent: unparseable,
-		Chain:                fullEntry,
+	chain.RootDN = rootDN
+
+	// for _, c := range fullEntry {
+	// 	id, err := l.addCertificate(c)
+	// 	if err != nil {
+	// 		return 0, err
+	// 	}
+	// 	chain.CertIDs = append(chain.CertIDs, id)
+	// }
+
+	id, err := l.db.AddChain(chain)
+	if err != nil {
+		return 0, err
 	}
+	return id, nil
 }
 
-func (l *Log) GetNewEntries(processed chan *LogEntry) error {
+func (l *Log) processEntry(e *ct.LogEntry) error {
+	entry := &LogEntry{EntryNum: e.Index, LogID: l.ID}
+	chainID, err := l.addChain(e)
+	if err != nil {
+		return err
+	}
+	entry.ChainID = chainID
+	err = l.db.AddEntry(entry)
+	return err
+}
+
+func (l *Log) ProcessEntries(downloadedEntries chan ct.LogEntry) error {
+	for e := range downloadedEntries {
+		err := l.processEntry(&e)
+		if err != nil {
+			// log
+			fmt.Println(err)
+		}
+	}
+	return nil
+}
+
+func (l *Log) GetNewEntries(downloadedEntries chan ct.LogEntry) error {
+	defer func() { close(downloadedEntries) }()
 	if l.remoteIndex <= l.localIndex {
 		// stat?
 		return nil
@@ -227,13 +290,37 @@ func (l *Log) GetNewEntries(processed chan *LogEntry) error {
 		fmt.Println(l.Name, len(entries))
 		l.stats.Inc(fmt.Sprintf("entries.downloaded.%s", l.Name), int64(len(entries)), 1.0)
 		for _, e := range entries {
-			processed <- l.processEntry(e)
+			downloadedEntries <- e
 			addedUpTo++
 			l.stats.Inc(fmt.Sprintf("entries.processed.%s", l.Name), 1, 1.0)
 			l.stats.Gauge(fmt.Sprintf("entries.remaining.%s", l.Name), l.remoteIndex-addedUpTo, 1.0)
 		}
 	}
 	return nil
+}
+
+func (l *Log) Update() error {
+	err := l.UpdateRemoteIndex()
+	if err != nil {
+		return err
+	}
+	bufferSize := 5000
+	if actuallyMissing := l.MissingEntries(); actuallyMissing < 5000 {
+		bufferSize = int(actuallyMissing)
+	}
+	entriesBuf := make(chan ct.LogEntry, bufferSize)
+	go func() {
+		err := l.GetNewEntries(entriesBuf)
+		if err != nil {
+			// log
+			fmt.Println(err)
+		}
+	}()
+	err = l.ProcessEntries(entriesBuf)
+	if err != nil {
+		return err
+	}
+	return l.UpdateLocalIndex()
 }
 
 type SubmissionRequest struct {

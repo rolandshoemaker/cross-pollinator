@@ -10,13 +10,12 @@ import (
 	cross "github.com/rolandshoemaker/cross-pollinator"
 
 	"github.com/cactus/go-statsd-client/statsd"
+	// ct "github.com/google/certificate-transparency/go"
 )
 
 type pollinator struct {
 	logUpdateInterval time.Duration
-	logWorkers        int
 	logs              []*cross.Log
-	entries           chan *cross.LogEntry
 
 	db        *cross.Database
 	dbWorkers int
@@ -29,67 +28,17 @@ type pollinator struct {
 }
 
 func (p *pollinator) getUpdates() {
-	// totalEntries := int64(0)
-	for _, l := range p.logs {
-		err := l.UpdateRemoteIndex()
-		if err != nil {
-			// log
-			fmt.Println(err)
-		}
-		// totalEntries += l.MissingEntries()
-	}
-
-	p.entries = make(chan *cross.LogEntry, 1000000) // totalEntries)
 	wg := new(sync.WaitGroup)
 	for _, l := range p.logs {
 		wg.Add(1)
 		go func(log *cross.Log) {
 			defer wg.Done()
-			err := log.GetNewEntries(p.entries)
+			err := log.Update()
 			if err != nil {
 				// log
 				fmt.Println(err)
-				return
 			}
 		}(l)
-	}
-
-	finishedProcessing := make(chan struct{})
-	go func() {
-		defer func() { finishedProcessing <- struct{}{} }()
-		p.processEntries()
-	}()
-	wg.Wait()
-	close(p.entries)
-	<-finishedProcessing
-
-	for _, l := range p.logs {
-		err := l.UpdateLocalIndex()
-		if err != nil {
-			// log
-			fmt.Println(err)
-			continue
-		}
-	}
-}
-
-func (p *pollinator) processEntries() {
-	wg := new(sync.WaitGroup)
-	for i := 0; i < p.dbWorkers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for e := range p.entries {
-				s := time.Now()
-				err := p.db.AddEntry(e)
-				p.stats.TimingDuration("entries.entry-insert-latency", time.Since(s), 1.0)
-				if err != nil {
-					// log
-					fmt.Println(err)
-				}
-				p.stats.Inc("entries.entries-inserted", 1, 1.0)
-			}
-		}()
 	}
 	wg.Wait()
 }
@@ -102,15 +51,6 @@ func (p *pollinator) submitEntries() {
 
 }
 
-// getEntries() -> p.entries concurrently for each log
-//  |
-//  v
-// processEntries() p.entries -> into the database
-//
-// findViableEntries() -> p.submissionRequests
-//  |
-//  v
-// submitEntries() p.submissionRequests ->
 func (p *pollinator) run() {
 
 }
@@ -146,17 +86,11 @@ func main() {
 		logs[i] = log
 	}
 
-	fmt.Println(logs)
 	p := pollinator{
 		db:        db,
 		dbWorkers: 250,
 		stats:     stats,
 		logs:      logs,
 	}
-
-	go p.getUpdates()
-	for {
-		fmt.Println(len(p.entries))
-		time.Sleep(time.Millisecond * 250)
-	}
+	p.getUpdates()
 }

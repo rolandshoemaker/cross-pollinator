@@ -1,19 +1,27 @@
 CREATE TABLE `certificates` (
-  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `id` int NOT NULL AUTO_INCREMENT,
   `hash` binary(32) UNIQUE NOT NULL,
-  `der` mediumblob NOT NULL,
+  `offset` bigint NOT NULL,
+  `length` int NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+CREATE TABLE `chains` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `hash` binary(32) UNIQUE NOT NULL,
+  -- `certIDs` jsonb UNIQUE NOT NULL,
+  `rootDN` varchar(255) NOT NULL,
+  `entryType` tinyint(8) NOT NULL,
+  `unparseableComponent` tinyint(1) NOT NULL,
+  `logs` jsonb NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 CREATE TABLE `logEntries` (
-  `id` bigint(20) NOT NULL AUTO_INCREMENT,
-  `chainIDs` varchar(255) NOT NULL,
-  `rootDN` varchar(255) NOT NULL,
-  `entryNum` bigint(20) NOT NULL,
+  `id` int NOT NULL AUTO_INCREMENT,
+  `chainID` int NOT NULL,
+  `entryNum` int NOT NULL,
   `logID` binary(32) NOT NULL,
-  `entryType` tinyint(8) NOT NULL,
-  `unparseableComponent` tinyint(1) NOT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `entryNum_logID` (`entryNum`, `logID`),
-  UNIQUE KEY `chainIDs_logID` (`chainIDs`, `logID`)
+  UNIQUE KEY `entryNum_logID` (`entryNum`, `logID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
