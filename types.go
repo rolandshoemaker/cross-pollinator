@@ -27,18 +27,18 @@ type certificate struct {
 type certificateChain struct {
 	ID                   int64
 	Hash                 []byte
-	CertIDs              []int64 `db:"-"`
-	RootDN               string
-	EntryType            ct.LogEntryType
-	UnparseableComponent bool
+	CertIDs              []int64         `db:"-"`
+	RootDN               string          `db:"root_dn"`
+	EntryType            ct.LogEntryType `db:"entry_type"`
+	UnparseableComponent bool            `db:"unparseable_component"`
 	Logs                 map[string]struct{}
 }
 
 type LogEntry struct {
 	ID       int64
-	EntryNum int64
-	LogID    []byte
-	ChainID  int64
+	EntryNum int64  `db:"entry_num"`
+	LogID    []byte `db:"log_id"`
+	ChainID  int64  `db:"chain_id"`
 }
 
 type Log struct {
@@ -257,7 +257,9 @@ func (l *Log) processEntry(e *ct.LogEntry) error {
 
 func (l *Log) ProcessEntries(downloadedEntries chan ct.LogEntry) error {
 	for e := range downloadedEntries {
+		s := time.Now()
 		err := l.processEntry(&e)
+		l.stats.TimingDuration(fmt.Sprintf("entries.processed.%s", l.Name), time.Since(s), 1.0)
 		if err != nil {
 			// log
 			fmt.Println(err)
@@ -282,18 +284,17 @@ func (l *Log) GetNewEntries(downloadedEntries chan ct.LogEntry) error {
 		s := time.Now()
 		entries, err := l.client.GetEntries(addedUpTo, max)
 		l.stats.TimingDuration(fmt.Sprintf("entries.download-latency.%s", l.Name), time.Since(s), 1.0)
+		l.stats.Inc(fmt.Sprintf("entries.downloaded.%s", l.Name), int64(len(entries)), 1.0)
+		l.stats.Gauge(fmt.Sprintf("entries.remaining.%s", l.Name), l.remoteIndex-(addedUpTo+int64(len(entries))), 1.0)
 		if err != nil {
 			// log && backoff?
 			fmt.Println(l.Name, err)
 			continue
 		}
 		fmt.Println(l.Name, len(entries))
-		l.stats.Inc(fmt.Sprintf("entries.downloaded.%s", l.Name), int64(len(entries)), 1.0)
 		for _, e := range entries {
 			downloadedEntries <- e
 			addedUpTo++
-			l.stats.Inc(fmt.Sprintf("entries.processed.%s", l.Name), 1, 1.0)
-			l.stats.Gauge(fmt.Sprintf("entries.remaining.%s", l.Name), l.remoteIndex-addedUpTo, 1.0)
 		}
 	}
 	return nil

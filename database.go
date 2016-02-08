@@ -4,38 +4,41 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"time"
 	// "strings"
 	// "log"
 	// "os"
 
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/cactus/go-statsd-client/statsd"
+	_ "github.com/lib/pq"
 	"gopkg.in/gorp.v1"
 )
 
 type Database struct {
 	*gorp.DbMap
+	stats statsd.Statter
 }
 
-func NewDatabase(uri string) *Database {
-	db, err := sql.Open("mysql", uri)
+func NewDatabase(dbURI string, stats statsd.Statter) (*Database, error) {
+	db, err := sql.Open("postgres", dbURI)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	db.SetMaxIdleConns(100)
 
-	dbMap := &gorp.DbMap{Db: db, Dialect: gorp.MySQLDialect{"InnoDB", "UTF8"}, TypeConverter: typeConverter{}}
-	dbMap.AddTableWithName(LogEntry{}, "logEntries").SetKeys(true, "ID")
+	dbMap := &gorp.DbMap{Db: db, Dialect: gorp.PostgresDialect{}, TypeConverter: typeConverter{}}
+	dbMap.AddTableWithName(LogEntry{}, "log_entries").SetKeys(true, "ID")
 	dbMap.AddTableWithName(certificateChain{}, "chains").SetKeys(true, "ID")
 	dbMap.AddTableWithName(certificate{}, "certificates").SetKeys(true, "ID")
 	// dbMap.TraceOn("SQL: ", log.New(os.Stdout, "", 5))
-	return &Database{dbMap}
+	return &Database{dbMap, stats}, nil
 }
 
 func (db *Database) getCertificateID(hash []byte) (int64, error) {
 	var id int64
 	err := db.DbMap.SelectOne(
 		&id,
-		"SELECT id FROM certificates WHERE hash = ?",
+		"SELECT id FROM certificates WHERE hash = $1",
 		hash,
 	)
 	if err != nil && err != sql.ErrNoRows {
@@ -48,7 +51,7 @@ func (db *Database) GetChainID(hash []byte) (int64, error) {
 	var id int64
 	err := db.DbMap.SelectOne(
 		&id,
-		"SELECT id FROM chains WHERE hash = ?",
+		"SELECT id FROM chains WHERE hash = $1",
 		hash,
 	)
 	if err != nil {
@@ -81,7 +84,9 @@ func (db *Database) AddChain(chain *certificateChain) (int64, error) {
 	} else if err == nil {
 		return id, nil
 	}
+	s := time.Now()
 	err := db.Insert(chain)
+	db.stats.TimingDuration("db.inserts.chains", time.Since(s), 1.0)
 	if err != nil {
 		return 0, err
 	}
@@ -89,8 +94,10 @@ func (db *Database) AddChain(chain *certificateChain) (int64, error) {
 }
 
 func (db *Database) AddEntry(e *LogEntry) error {
+	s := time.Now()
 	err := db.DbMap.Insert(e)
-	if err != nil { // && !strings.HasPrefix(err.Error(), "Error 1062: Duplicate entry") {
+	db.stats.TimingDuration("db.inserts.entries", time.Since(s), 1.0)
+	if err != nil {
 		return err
 	}
 	return nil
@@ -98,7 +105,7 @@ func (db *Database) AddEntry(e *LogEntry) error {
 
 func (db *Database) getCurrentLogIndex(logID []byte) (int64, error) {
 	index, err := db.SelectNullInt(
-		"SELECT MAX(entryNum) FROM logEntries WHERE logID = ?",
+		"SELECT MAX(entry_num) FROM log_entries WHERE log_id = $1",
 		logID,
 	)
 	if err != nil {

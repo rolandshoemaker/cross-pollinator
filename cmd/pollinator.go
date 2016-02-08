@@ -70,8 +70,12 @@ func main() {
 		return
 	}
 
-	db := cross.NewDatabase(config.DatabaseURI)
 	stats, err := statsd.NewClient(config.StatsdURI, "pollinator")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	db, err := cross.NewDatabase(config.DatabaseURI, stats)
 	if err != nil {
 		fmt.Println(err)
 		return
