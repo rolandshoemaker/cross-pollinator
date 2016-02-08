@@ -107,7 +107,7 @@ func (db *Database) AddChain(chain *certificateChain) (int64, error) {
 		chain.UnparseableComponent,
 		string(logs),
 	)
-	db.stats.Inc("entries.db.inserts.chains", time.Since(s), 1.0)
+	db.stats.TimingDuration("entries.db.inserts.chains", time.Since(s), 1.0)
 	return id, err
 }
 
