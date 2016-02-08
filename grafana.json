@@ -1,3 +1,4 @@
+
 {
   "id": 3,
   "title": "pollinator",
@@ -19,7 +20,7 @@
           "datasource": null,
           "editable": true,
           "error": false,
-          "fill": 1,
+          "fill": 0,
           "grid": {
             "leftLogBase": 1,
             "leftMax": null,
@@ -43,7 +44,7 @@
             "values": false
           },
           "lines": true,
-          "linewidth": 2,
+          "linewidth": 1,
           "links": [],
           "nullPointMode": "connected",
           "percentage": false,
@@ -65,77 +66,6 @@
           "timeFrom": null,
           "timeShift": null,
           "title": "Remaining missing entries",
-          "tooltip": {
-            "shared": true,
-            "value_type": "cumulative",
-            "query_as_alias": true
-          },
-          "type": "graph",
-          "x-axis": true,
-          "y-axis": true,
-          "y_formats": [
-            "short",
-            "short"
-          ],
-          "scale": 1,
-          "annotate": {
-            "enable": false
-          },
-          "resolution": 100,
-          "zerofill": true
-        },
-        {
-          "aliasColors": {},
-          "bars": false,
-          "datasource": null,
-          "editable": true,
-          "error": false,
-          "fill": 1,
-          "grid": {
-            "leftLogBase": 1,
-            "leftMax": null,
-            "leftMin": null,
-            "rightLogBase": 1,
-            "rightMax": null,
-            "rightMin": null,
-            "threshold1": null,
-            "threshold1Color": "rgba(216, 200, 27, 0.27)",
-            "threshold2": null,
-            "threshold2Color": "rgba(234, 112, 112, 0.22)"
-          },
-          "id": 1,
-          "legend": {
-            "avg": false,
-            "current": false,
-            "max": false,
-            "min": false,
-            "show": true,
-            "total": false,
-            "values": false
-          },
-          "lines": true,
-          "linewidth": 2,
-          "links": [],
-          "nullPointMode": "connected",
-          "percentage": false,
-          "pointradius": 5,
-          "points": false,
-          "renderer": "flot",
-          "seriesOverrides": [],
-          "span": 12,
-          "stack": false,
-          "steppedLine": false,
-          "targets": [
-            {
-              "target": "aliasByNode(sumSeries(stats.counters.pollinator.entries.downloaded.*.rate), 4)"
-            },
-            {
-              "target": "aliasByNode(scale(sumSeries(stats.timers.pollinator.entries.processed.*.count), 0.1), 4)"
-            }
-          ],
-          "timeFrom": null,
-          "timeShift": null,
-          "title": "Download / Processing rates",
           "tooltip": {
             "shared": true,
             "value_type": "cumulative",
@@ -182,6 +112,145 @@
             "threshold2": null,
             "threshold2Color": "rgba(234, 112, 112, 0.22)"
           },
+          "id": 1,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "links": [],
+          "nullPointMode": "connected",
+          "percentage": false,
+          "pointradius": 5,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "span": 12,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "target": "aliasByNode(sumSeries(stats.counters.pollinator.entries.downloaded.*.rate), 4)"
+            },
+            {
+              "target": "aliasByNode(scale(sumSeries(stats.timers.pollinator.entries.processed.*.count), 0.1), 4)"
+            },
+            {
+              "target": "aliasByNode(sumSeries(stats.counters.pollinator.entries.unparseable_component.rate), 4)"
+            }
+          ],
+          "timeFrom": null,
+          "timeShift": null,
+          "title": "Download / Processing rates",
+          "tooltip": {
+            "shared": true,
+            "value_type": "cumulative",
+            "query_as_alias": true
+          },
+          "type": "graph",
+          "x-axis": true,
+          "y-axis": true,
+          "y_formats": [
+            "short",
+            "short"
+          ],
+          "scale": 1,
+          "annotate": {
+            "enable": false
+          },
+          "resolution": 100,
+          "zerofill": true
+        },
+        {
+          "error": false,
+          "span": 12,
+          "editable": true,
+          "type": "graph",
+          "id": 8,
+          "datasource": null,
+          "renderer": "flot",
+          "x-axis": true,
+          "y-axis": true,
+          "scale": 1,
+          "y_formats": [
+            "ms",
+            "short"
+          ],
+          "grid": {
+            "leftMax": null,
+            "rightMax": null,
+            "leftMin": null,
+            "rightMin": null,
+            "threshold1": null,
+            "threshold2": null,
+            "threshold1Color": "rgba(216, 200, 27, 0.27)",
+            "threshold2Color": "rgba(234, 112, 112, 0.22)"
+          },
+          "annotate": {
+            "enable": false
+          },
+          "resolution": 100,
+          "lines": true,
+          "fill": 0,
+          "linewidth": 1,
+          "points": false,
+          "pointradius": 5,
+          "bars": false,
+          "stack": false,
+          "legend": {
+            "show": true,
+            "values": false,
+            "min": false,
+            "max": false,
+            "current": false,
+            "total": false,
+            "avg": false
+          },
+          "percentage": false,
+          "zerofill": true,
+          "nullPointMode": "connected",
+          "steppedLine": false,
+          "tooltip": {
+            "value_type": "cumulative",
+            "query_as_alias": true
+          },
+          "targets": [
+            {
+              "target": "averageSeries(stats.timers.pollinator.entries.processed.*.mean)"
+            },
+            {
+              "target": "percentileOfSeries(stats.timers.pollinator.entries.processed.*.upper_95, 95, 'false')"
+            }
+          ],
+          "aliasColors": {},
+          "seriesOverrides": [],
+          "title": "Processing latency"
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "datasource": null,
+          "editable": true,
+          "error": false,
+          "fill": 0,
+          "grid": {
+            "leftLogBase": 1,
+            "leftMax": null,
+            "leftMin": null,
+            "rightLogBase": 1,
+            "rightMax": null,
+            "rightMin": null,
+            "threshold1": null,
+            "threshold1Color": "rgba(216, 200, 27, 0.27)",
+            "threshold2": null,
+            "threshold2Color": "rgba(234, 112, 112, 0.22)"
+          },
           "id": 3,
           "legend": {
             "avg": false,
@@ -193,7 +262,7 @@
             "values": false
           },
           "lines": true,
-          "linewidth": 2,
+          "linewidth": 1,
           "links": [],
           "nullPointMode": "connected",
           "percentage": false,
@@ -212,9 +281,6 @@
           "targets": [
             {
               "target": "aliasByNode(stats.timers.pollinator.entries.download-latency.*.mean, 5)"
-            },
-            {
-              "target": "alias(averageSeries(stats.timers.pollinator.entries.download-latency.*.mean), 'mean')"
             }
           ],
           "timeFrom": null,
@@ -238,9 +304,77 @@
           },
           "resolution": 100,
           "zerofill": true
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "datasource": null,
+          "editable": true,
+          "error": false,
+          "fill": 0,
+          "grid": {
+            "leftLogBase": 1,
+            "leftMax": null,
+            "leftMin": null,
+            "rightLogBase": 1,
+            "rightMax": null,
+            "rightMin": null,
+            "threshold1": null,
+            "threshold1Color": "rgba(216, 200, 27, 0.27)",
+            "threshold2": null,
+            "threshold2Color": "rgba(234, 112, 112, 0.22)"
+          },
+          "id": 7,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "links": [],
+          "nullPointMode": "connected",
+          "percentage": false,
+          "pointradius": 5,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "span": 12,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "target": "aliasByNode(stats.counters.pollinator.entries.downloaded.*.rate, 5)"
+            }
+          ],
+          "timeFrom": null,
+          "timeShift": null,
+          "title": "Downloads per log",
+          "tooltip": {
+            "shared": true,
+            "value_type": "cumulative",
+            "query_as_alias": true
+          },
+          "type": "graph",
+          "x-axis": true,
+          "y-axis": true,
+          "y_formats": [
+            "short",
+            "short"
+          ],
+          "scale": 1,
+          "annotate": {
+            "enable": false
+          },
+          "resolution": 100,
+          "zerofill": true
         }
       ],
-      "title": "New row"
+      "title": "Row"
     },
     {
       "title": "New row",
@@ -307,6 +441,12 @@
             },
             {
               "target": "scale(stats.timers.pollinator.db.inserts.chains.count, 0.1)"
+            },
+            {
+              "target": "scale(stats.timers.pollinator.db.updates.chains.count, 0.1)"
+            },
+            {
+              "target": "scale(stats.timers.pollinator.db.selects.chains_id.count, 0.1)"
             }
           ],
           "aliasColors": {},
@@ -320,7 +460,7 @@
               "yaxis": 2
             }
           ],
-          "title": "Insert rates"
+          "title": "Query rates"
         },
         {
           "error": false,
@@ -381,11 +521,17 @@
             },
             {
               "target": "stats.timers.pollinator.db.inserts.entries.mean"
+            },
+            {
+              "target": "stats.timers.pollinator.db.updates.chains.mean"
+            },
+            {
+              "target": "stats.timers.pollinator.db.selects.chains_id.mean"
             }
           ],
           "aliasColors": {},
           "seriesOverrides": [],
-          "title": "Insert latencies"
+          "title": "Query latencies"
         }
       ]
     }
@@ -433,6 +579,6 @@
   "annotations": {
     "list": []
   },
-  "refresh": false,
+  "refresh": "10s",
   "version": 6
 }
