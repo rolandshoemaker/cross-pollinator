@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 	// "strings"
 	// "log"
@@ -78,19 +79,34 @@ func (db *Database) AddCertificate(hash []byte, offset, length int64) (int64, er
 	return cert.ID, nil
 }
 
+var chainUpdate = `UPDATE chains SET logs = jsonb_set(chains.logs, '{%X}', '{}') WHERE hash = $1;`
+
+func (db *Database) AddLogToChain(hash []byte, logID []byte) error {
+	_, err := db.Exec(fmt.Sprintf(chainUpdate, logID), hash)
+	return err
+}
+
+var chainUpsert = `INSERT INTO chains (id, hash, root_dn, entry_type, unparseable_component, logs)
+       VALUES (DEFAULT, $1, $2, $3, $4, $5)
+       ON CONFLICT (hash) DO UPDATE SET logs = jsonb_set(chains.logs, '{%X}', '{}')
+       RETURNING id;`
+
 func (db *Database) AddChain(chain *certificateChain) (int64, error) {
-	if id, err := db.GetChainID(chain.Hash); err != nil && err != sql.ErrNoRows {
-		return 0, err
-	} else if err == nil {
-		return id, nil
-	}
-	s := time.Now()
-	err := db.Insert(chain)
-	db.stats.TimingDuration("db.inserts.chains", time.Since(s), 1.0)
+	var id int64
+	logs, err := json.Marshal(chain.Logs)
 	if err != nil {
 		return 0, err
 	}
-	return chain.ID, nil
+	err = db.SelectOne(
+		&id,
+		fmt.Sprintf(chainUpsert, chain.Hash),
+		chain.Hash,
+		chain.RootDN,
+		chain.EntryType,
+		chain.UnparseableComponent,
+		string(logs),
+	)
+	return id, err
 }
 
 func (db *Database) AddEntry(e *LogEntry) error {

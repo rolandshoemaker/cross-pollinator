@@ -202,6 +202,10 @@ func (l *Log) addChain(e *ct.LogEntry) (int64, error) {
 	}
 	chainFP := hasher.Sum(nil)
 	if chainID, err := l.db.GetChainID(chainFP); err == nil {
+		err = l.db.AddLogToChain(chainFP, l.ID)
+		if err != nil {
+			return 0, err
+		}
 		return chainID, nil
 	} else if err != nil && err != sql.ErrNoRows {
 		return 0, err
@@ -230,6 +234,7 @@ func (l *Log) addChain(e *ct.LogEntry) (int64, error) {
 		// log
 		fmt.Println(err)
 		chain.UnparseableComponent = true
+		l.stats.Inc("entries.unparseable_component", 1, 1.0)
 	}
 	chain.RootDN = rootDN
 
@@ -317,7 +322,7 @@ func (l *Log) Update() error {
 	if err != nil {
 		return err
 	}
-	bufferSize := 5000
+	bufferSize := 25000
 	if actuallyMissing := l.MissingEntries(); actuallyMissing < 5000 {
 		bufferSize = int(actuallyMissing)
 	}
