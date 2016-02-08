@@ -71,7 +71,7 @@ func NewLog(db *Database, stats statsd.Statter, kl KnownLog) (*Log, error) {
 	}
 	id := sha256.Sum256(pkBytes)
 	log := &Log{
-		Name:       name,
+		Name:       strings.Replace(name, ".", " ", -1),
 		ID:         id[:],
 		uri:        uri,
 		client:     ctClient.New(uri),
