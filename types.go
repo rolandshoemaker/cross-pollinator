@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cactus/go-statsd-client/statsd"
@@ -50,7 +51,9 @@ type Log struct {
 	uri    string
 	client *ctClient.LogClient
 
-	db       *Database
+	db        *Database
+	dbWorkers int
+
 	certFile *byteFile
 	stats    statsd.Statter
 
@@ -73,6 +76,7 @@ func NewLog(db *Database, stats statsd.Statter, kl KnownLog) (*Log, error) {
 		uri:        uri,
 		client:     ctClient.New(uri),
 		db:         db,
+		dbWorkers:  5,
 		stats:      stats,
 		validRoots: make(map[string]struct{}),
 	}
@@ -256,15 +260,23 @@ func (l *Log) processEntry(e *ct.LogEntry) error {
 }
 
 func (l *Log) ProcessEntries(downloadedEntries chan ct.LogEntry) error {
-	for e := range downloadedEntries {
-		s := time.Now()
-		err := l.processEntry(&e)
-		l.stats.TimingDuration(fmt.Sprintf("entries.processed.%s", l.Name), time.Since(s), 1.0)
-		if err != nil {
-			// log
-			fmt.Println(err)
-		}
+	wg := new(sync.WaitGroup)
+	for i := 0; i < l.dbWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for e := range downloadedEntries {
+				s := time.Now()
+				err := l.processEntry(&e)
+				l.stats.TimingDuration(fmt.Sprintf("entries.processed.%s", l.Name), time.Since(s), 1.0)
+				if err != nil {
+					// log
+					fmt.Println(err)
+				}
+			}
+		}()
 	}
+	wg.Wait()
 	return nil
 }
 

@@ -24,7 +24,7 @@ func NewDatabase(dbURI string, stats statsd.Statter) (*Database, error) {
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxIdleConns(100)
+	db.SetMaxIdleConns(150)
 
 	dbMap := &gorp.DbMap{Db: db, Dialect: gorp.PostgresDialect{}, TypeConverter: typeConverter{}}
 	dbMap.AddTableWithName(LogEntry{}, "log_entries").SetKeys(true, "ID")
