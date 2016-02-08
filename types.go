@@ -204,11 +204,7 @@ func (l *Log) addChain(e *ct.LogEntry) (int64, error) {
 		hasher.Write([]byte(c))
 	}
 	chainFP := hasher.Sum(nil)
-	if chainID, err := l.db.GetChainID(chainFP); err == nil {
-		err = l.db.AddLogToChain(chainFP, l.ID)
-		if err != nil {
-			return 0, err
-		}
+	if chainID, err := l.db.UpdateChain(chainFP, l.ID); err == nil {
 		return chainID, nil
 	} else if err != nil && err != sql.ErrNoRows {
 		return 0, err

@@ -81,13 +81,19 @@ func (db *Database) AddCertificate(hash []byte, offset, length int64) (int64, er
 	return cert.ID, nil
 }
 
-var chainUpdate = `UPDATE chains SET logs = jsonb_set(chains.logs, '{%X}', '{}') WHERE hash = $1;`
+var chainUpdate = `UPDATE chains SET logs = jsonb_set(chains.logs, '{%X}', '{}') WHERE hash = $1 RETURNING id;`
 
-func (db *Database) AddLogToChain(hash []byte, logID []byte) error {
+func (db *Database) UpdateChain(hash, logID []byte) (int64, error) {
 	s := time.Now()
-	_, err := db.Exec(fmt.Sprintf(chainUpdate, logID), hash)
+	id, err := db.SelectNullInt(fmt.Sprintf(chainUpdate, logID), hash)
 	db.stats.TimingDuration("db.updates.chains", time.Since(s), 1.0)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	if !id.Valid {
+		return 0, sql.ErrNoRows
+	}
+	return id.Int64, nil
 }
 
 var chainUpsert = `INSERT INTO chains (id, hash, root_dn, entry_type, unparseable_component, logs)
