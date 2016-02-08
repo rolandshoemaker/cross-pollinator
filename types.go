@@ -54,13 +54,15 @@ type Log struct {
 	db        *Database
 	dbWorkers int
 
+	bufferSize int
+
 	certFile *byteFile
 	stats    statsd.Statter
 
 	validRoots map[string]struct{}
 }
 
-func NewLog(db *Database, stats statsd.Statter, kl KnownLog) (*Log, error) {
+func NewLog(db *Database, stats statsd.Statter, kl KnownLog, bufferSize, dbWorkers int) (*Log, error) {
 	name, uri := kl.Description, kl.URL
 	if !strings.HasPrefix(uri, "http") {
 		uri = "https://" + uri
@@ -76,9 +78,10 @@ func NewLog(db *Database, stats statsd.Statter, kl KnownLog) (*Log, error) {
 		uri:        uri,
 		client:     ctClient.New(uri),
 		db:         db,
-		dbWorkers:  5,
+		dbWorkers:  dbWorkers,
 		stats:      stats,
 		validRoots: make(map[string]struct{}),
+		bufferSize: bufferSize,
 	}
 	err = log.populateRoots()
 	if err != nil {
@@ -322,8 +325,8 @@ func (l *Log) Update() error {
 	if err != nil {
 		return err
 	}
-	bufferSize := 25000
-	if actuallyMissing := l.MissingEntries(); actuallyMissing < 5000 {
+	bufferSize := l.bufferSize
+	if actuallyMissing := l.MissingEntries(); int(actuallyMissing) < l.bufferSize {
 		bufferSize = int(actuallyMissing)
 	}
 	entriesBuf := make(chan ct.LogEntry, bufferSize)

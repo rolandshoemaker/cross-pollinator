@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"sync"
@@ -56,6 +57,11 @@ func (p *pollinator) run() {
 }
 
 func main() {
+	perLogBufferSize := flag.Int("perLogBufferSize", 25000, "")
+	perLogDBWorkers := flag.Int("perLogDBWorkers", 5, "")
+	dbMaxIdleConns := flag.Int("dbMaxIdleConns", 300, "")
+	flag.Parse()
+
 	configFilename := "config.json"
 
 	var config cross.Config
@@ -75,14 +81,14 @@ func main() {
 		fmt.Println(err)
 		return
 	}
-	db, err := cross.NewDatabase(config.DatabaseURI, stats)
+	db, err := cross.NewDatabase(config.DatabaseURI, stats, *dbMaxIdleConns)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 	logs := make([]*cross.Log, len(config.Logs))
 	for i, kl := range config.Logs {
-		log, err := cross.NewLog(db, stats, kl)
+		log, err := cross.NewLog(db, stats, kl, *perLogBufferSize, *perLogDBWorkers)
 		if err != nil {
 			fmt.Println(err)
 			return

@@ -20,12 +20,12 @@ type Database struct {
 	stats statsd.Statter
 }
 
-func NewDatabase(dbURI string, stats statsd.Statter) (*Database, error) {
+func NewDatabase(dbURI string, stats statsd.Statter, maxIdleConns int) (*Database, error) {
 	db, err := sql.Open("postgres", dbURI)
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxIdleConns(150)
+	db.SetMaxIdleConns(maxIdleConns)
 
 	dbMap := &gorp.DbMap{Db: db, Dialect: gorp.PostgresDialect{}, TypeConverter: typeConverter{}}
 	dbMap.AddTableWithName(LogEntry{}, "log_entries").SetKeys(true, "ID")
