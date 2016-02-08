@@ -127,10 +127,10 @@
           "steppedLine": false,
           "targets": [
             {
-              "target": "aliasByNode(sumSeries(stats.counters.pollinator.entries.downloaded.*.count), 4)"
+              "target": "aliasByNode(sumSeries(stats.counters.pollinator.entries.downloaded.*.rate), 4)"
             },
             {
-              "target": "aliasByNode(sumSeries(stats.timers.pollinator.entries.processed.*.count), 4)"
+              "target": "aliasByNode(scale(sumSeries(stats.timers.pollinator.entries.processed.*.count), 0.1), 4)"
             }
           ],
           "timeFrom": null,
@@ -303,10 +303,10 @@
           },
           "targets": [
             {
-              "target": "stats.timers.pollinator.db.inserts.entries.count"
+              "target": "scale(stats.timers.pollinator.db.inserts.entries.count, 0.1)"
             },
             {
-              "target": "stats.timers.pollinator.db.inserts.chains.count"
+              "target": "scale(stats.timers.pollinator.db.inserts.chains.count, 0.1)"
             }
           ],
           "aliasColors": {},
