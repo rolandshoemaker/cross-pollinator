@@ -97,6 +97,7 @@ func (db *Database) AddChain(chain *certificateChain) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	s := time.Now()
 	err = db.SelectOne(
 		&id,
 		fmt.Sprintf(chainUpsert, chain.Hash),
@@ -106,6 +107,7 @@ func (db *Database) AddChain(chain *certificateChain) (int64, error) {
 		chain.UnparseableComponent,
 		string(logs),
 	)
+	db.stats.Inc("entries.db.inserts.chains", time.Since(s), 1.0)
 	return id, err
 }
 
