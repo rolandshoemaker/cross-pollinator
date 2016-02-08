@@ -50,11 +50,13 @@ func (db *Database) getCertificateID(hash []byte) (int64, error) {
 
 func (db *Database) GetChainID(hash []byte) (int64, error) {
 	var id int64
+	s := time.Now()
 	err := db.DbMap.SelectOne(
 		&id,
 		"SELECT id FROM chains WHERE hash = $1",
 		hash,
 	)
+	db.stats.TimingDuration("db.selects.chains_id", time.Since(s), 1.0)
 	if err != nil {
 		return 0, err
 	}
@@ -82,7 +84,9 @@ func (db *Database) AddCertificate(hash []byte, offset, length int64) (int64, er
 var chainUpdate = `UPDATE chains SET logs = jsonb_set(chains.logs, '{%X}', '{}') WHERE hash = $1;`
 
 func (db *Database) AddLogToChain(hash []byte, logID []byte) error {
+	s := time.Now()
 	_, err := db.Exec(fmt.Sprintf(chainUpdate, logID), hash)
+	db.stats.TimingDuration("db.updates.chains", time.Since(s), 1.0)
 	return err
 }
 
