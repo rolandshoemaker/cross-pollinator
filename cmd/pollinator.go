@@ -102,5 +102,9 @@ func main() {
 		stats:     stats,
 		logs:      logs,
 	}
-	p.getUpdates()
+	// p.getUpdates()
+	for _, l := range p.logs {
+		missing, err := l.CountMissingChains()
+		fmt.Printf("%s: %d (%s)\n", l.Description, missing, err)
+	}
 }

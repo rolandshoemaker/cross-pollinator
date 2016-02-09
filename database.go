@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
-	// "strings"
 	// "log"
 	// "os"
 
@@ -143,6 +143,28 @@ func (db *Database) getCurrentLogIndex(logID []byte) (int64, error) {
 		return index.Int64, nil
 	}
 	return 0, nil
+}
+
+func (db *Database) CountMissingChains(logID []byte, rootDNs []string) (int64, error) {
+	var count int64
+	argsStr := []string{}
+	args := []interface{}{}
+	for i, dn := range rootDNs {
+		argsStr = append(argsStr, fmt.Sprintf("$%d", i+1))
+		args = append(args, dn)
+	}
+	err := db.SelectOne(
+		&count,
+		fmt.Sprintf(
+			`SELECT COUNT(id) FROM chains
+       WHERE NOT logs ? '%X'
+       AND root_dn IN (%s)`,
+			logID,
+			strings.Join(argsStr, ", "),
+		),
+		args...,
+	)
+	return count, err
 }
 
 type typeConverter struct{}

@@ -12,11 +12,7 @@ type byteFile struct {
 	currentOffset int64
 }
 
-func newByteFile(filename string) (*byteFile, error) {
-	f, err := os.OpenFile(filename, 0, os.ModePerm) // FIX FLAG
-	if err != nil {
-		return nil, err
-	}
+func NewByteFile(f *os.File) (*byteFile, error) {
 	fs, err := f.Stat()
 	if err != nil {
 		return nil, err
@@ -24,7 +20,7 @@ func newByteFile(filename string) (*byteFile, error) {
 	return &byteFile{f, new(sync.RWMutex), fs.Size()}, nil
 }
 
-func (bf *byteFile) readSection(offset, length int64) ([]byte, error) {
+func (bf *byteFile) ReadSection(offset, length int64) ([]byte, error) {
 	buf := make([]byte, length)
 	bf.mu.RLock()
 	defer bf.mu.RUnlock()
@@ -37,13 +33,16 @@ func (bf *byteFile) readSection(offset, length int64) ([]byte, error) {
 	return buf, nil
 }
 
-func (bf *byteFile) writeSection(stuff []byte) (int64, error) {
+func (bf *byteFile) WriteSection(stuff []byte) (int64, error) {
 	bf.mu.Lock()
 	defer bf.mu.Unlock()
 	offset := bf.currentOffset
-	_, err := bf.WriteAt(stuff, offset)
+	w, err := bf.WriteAt(stuff, offset)
 	if err != nil {
 		return 0, err
+	}
+	if w != len(stuff) {
+		return 0, fmt.Errorf("Partial write, expected %d, only wrote %d", len(stuff), w)
 	}
 	bf.currentOffset += int64(len(stuff))
 	return offset, nil

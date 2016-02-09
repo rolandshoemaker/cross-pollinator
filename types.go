@@ -340,6 +340,14 @@ func (l *Log) Update() error {
 	return l.UpdateLocalIndex()
 }
 
+func (l *Log) CountMissingChains() (int64, error) {
+	rootDNs := []string{}
+	for dn := range l.validRoots {
+		rootDNs = append(rootDNs, dn)
+	}
+	return l.db.CountMissingChains(l.ID, rootDNs)
+}
+
 type SubmissionRequest struct {
 	entryNum int64
 	srcLog   *Log
